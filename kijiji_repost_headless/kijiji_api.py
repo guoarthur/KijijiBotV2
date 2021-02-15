@@ -67,24 +67,6 @@ def get_kj_data(html):
                 return json.loads(m.group(1))
     raise KijijiApiException("'__data' JSON object not found in html text.", html)
 
-
-def get_xsrf_token(html):
-    """
-    Return XSRF token
-    This function is only necessary for the 'm-my-ads.html' page, as this particular page
-    does not contain the usual 'ca.kijiji.xsrf.token' hidden HTML form input element, which is easier to scrape
-    """
-    soup = bs4.BeautifulSoup(html, 'html.parser')
-    p = re.compile(r'Zoop\.init\(.*config: ({.+?}).*\);')
-    for script in soup.find_all("script", {"src": False}):
-        if script:
-            m = p.search(script.string.replace("\n", ""))
-            if m:
-                # Using yaml to load since this is not valid JSON
-                return yaml.load(m.group(1), Loader=yaml.FullLoader)['token']
-    raise KijijiApiException("XSRF token not found in html text.", html)
-
-
 class KijijiApi:
     """
     All functions require to be logged in to Kijiji first in order to function correctly
@@ -128,12 +110,15 @@ class KijijiApi:
         Delete ad based on ad ID
         """
         my_ads_page = self.session.get('https://www.kijiji.ca/m-my-ads.html',  headers=request_headers)
+        token_head = self.session.head('https://www.kijiji.ca/j-token-gen.json',  headers=request_headers)
+        xsrf_token = token_head.headers['X-Ebay-Box-Token']
         params = {
             'Action': 'DELETE_ADS',
             'Mode': 'ACTIVE',
             'needsRedirect': 'false',
             'ads': '[{{"adId":"{}","reason":"PREFER_NOT_TO_SAY","otherReason":""}}]'.format(ad_id),
-            'ca.kijiji.xsrf.token': get_xsrf_token(my_ads_page.text),
+            'ca.kijiji.xsrf.token': xsrf_token,
+            'X-Ebay-Box-Token': xsrf_token,
         }
         resp = self.session.post('https://www.kijiji.ca/j-delete-ad.json', data=params,  headers=request_headers)
         if "OK" not in resp.text:
